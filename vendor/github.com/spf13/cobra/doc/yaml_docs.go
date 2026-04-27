@@ -1,9 +1,10 @@
-// Copyright 2016 French Ben. All rights reserved.
+// Copyright 2013-2023 The Cobra Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
-// http://www.apache.org/licenses/LICENSE-2.0
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -23,7 +24,7 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
-	"gopkg.in/yaml.v2"
+	"go.yaml.in/yaml/v3"
 )
 
 type cmdOption struct {
@@ -37,6 +38,7 @@ type cmdDoc struct {
 	Name             string
 	Synopsis         string      `yaml:",omitempty"`
 	Description      string      `yaml:",omitempty"`
+	Usage            string      `yaml:",omitempty"`
 	Options          []cmdOption `yaml:",omitempty"`
 	InheritedOptions []cmdOption `yaml:"inherited_options,omitempty"`
 	Example          string      `yaml:",omitempty"`
@@ -45,8 +47,8 @@ type cmdDoc struct {
 
 // GenYamlTree creates yaml structured ref files for this command and all descendants
 // in the directory given. This function may not work
-// correctly if your command names have - in them. If you have `cmd` with two
-// subcmds, `sub` and `sub-third`. And `sub` has a subcommand called `third`
+// correctly if your command names have `-` in them. If you have `cmd` with two
+// subcmds, `sub` and `sub-third`, and `sub` has a subcommand called `third`
 // it is undefined which help output will be in the file `cmd-sub-third.1`.
 func GenYamlTree(cmd *cobra.Command, dir string) error {
 	identity := func(s string) string { return s }
@@ -54,7 +56,7 @@ func GenYamlTree(cmd *cobra.Command, dir string) error {
 	return GenYamlTreeCustom(cmd, dir, emptyStr, identity)
 }
 
-// GenYamlTreeCustom creates yaml structured ref files
+// GenYamlTreeCustom creates yaml structured ref files.
 func GenYamlTreeCustom(cmd *cobra.Command, dir string, filePrepender, linkHandler func(string) string) error {
 	for _, c := range cmd.Commands() {
 		if !c.IsAvailableCommand() || c.IsAdditionalHelpTopicCommand() {
@@ -65,7 +67,7 @@ func GenYamlTreeCustom(cmd *cobra.Command, dir string, filePrepender, linkHandle
 		}
 	}
 
-	basename := strings.Replace(cmd.CommandPath(), " ", "_", -1) + ".yaml"
+	basename := strings.ReplaceAll(cmd.CommandPath(), " ", "_") + ".yaml"
 	filename := filepath.Join(dir, basename)
 	f, err := os.Create(filename)
 	if err != nil {
@@ -82,18 +84,25 @@ func GenYamlTreeCustom(cmd *cobra.Command, dir string, filePrepender, linkHandle
 	return nil
 }
 
-// GenYaml creates yaml output
+// GenYaml creates yaml output.
 func GenYaml(cmd *cobra.Command, w io.Writer) error {
 	return GenYamlCustom(cmd, w, func(s string) string { return s })
 }
 
-// GenYamlCustom creates custom yaml output
+// GenYamlCustom creates custom yaml output.
 func GenYamlCustom(cmd *cobra.Command, w io.Writer, linkHandler func(string) string) error {
+	cmd.InitDefaultHelpCmd()
+	cmd.InitDefaultHelpFlag()
+
 	yamlDoc := cmdDoc{}
 	yamlDoc.Name = cmd.CommandPath()
 
 	yamlDoc.Synopsis = forceMultiLine(cmd.Short)
 	yamlDoc.Description = forceMultiLine(cmd.Long)
+
+	if cmd.Runnable() {
+		yamlDoc.Usage = cmd.UseLine()
+	}
 
 	if len(cmd.Example) > 0 {
 		yamlDoc.Example = cmd.Example
@@ -120,7 +129,7 @@ func GenYamlCustom(cmd *cobra.Command, w io.Writer, linkHandler func(string) str
 			if !child.IsAvailableCommand() || child.IsAdditionalHelpTopicCommand() {
 				continue
 			}
-			result = append(result, child.Name()+" - "+child.Short)
+			result = append(result, child.CommandPath()+" - "+child.Short)
 		}
 		yamlDoc.SeeAlso = result
 	}
@@ -130,7 +139,8 @@ func GenYamlCustom(cmd *cobra.Command, w io.Writer, linkHandler func(string) str
 		fmt.Println(err)
 		os.Exit(1)
 	}
-	if _, err := fmt.Fprintf(w, string(final)); err != nil {
+
+	if _, err := w.Write(final); err != nil {
 		return err
 	}
 	return nil
@@ -143,7 +153,7 @@ func genFlagResult(flags *pflag.FlagSet) []cmdOption {
 		// Todo, when we mark a shorthand is deprecated, but specify an empty message.
 		// The flag.ShorthandDeprecated is empty as the shorthand is deprecated.
 		// Using len(flag.ShorthandDeprecated) > 0 can't handle this, others are ok.
-		if !(len(flag.ShorthandDeprecated) > 0) && len(flag.Shorthand) > 0 {
+		if len(flag.ShorthandDeprecated) == 0 && len(flag.Shorthand) > 0 {
 			opt := cmdOption{
 				flag.Name,
 				flag.Shorthand,

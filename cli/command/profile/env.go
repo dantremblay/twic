@@ -1,19 +1,13 @@
 package profile
 
 import (
+	"errors"
 	"os"
 	"text/template"
 
-	log "github.com/Sirupsen/logrus"
 	"github.com/kassisol/tsa/pkg/adf"
 	"github.com/kassisol/twic/storage"
-	"github.com/kassisol/twic/storage/driver"
 	"github.com/spf13/cobra"
-)
-
-var (
-	profileEnvShell string
-	profileEnvUnset bool
 )
 
 type Data struct {
@@ -25,62 +19,64 @@ type Data struct {
 }
 
 func newEnvCommand() *cobra.Command {
+	var (
+		shell string
+		unset bool
+	)
+
 	cmd := &cobra.Command{
 		Use:   "env [name]",
 		Short: "Set / Unset Docker environment variables",
 		Long:  envDescription,
-		Run:   runEnv,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runEnv(args, shell, unset)
+		},
 	}
 
 	flags := cmd.Flags()
-	flags.StringVarP(&profileEnvShell, "shell", "s", "bash", "Force environment to be configured for a specified shell: (tcsh, bash)")
-	flags.BoolVarP(&profileEnvUnset, "unset", "u", false, "Unset variables instead of setting them")
+	flags.StringVarP(&shell, "shell", "s", "bash", "Force environment to be configured for a specified shell: (tcsh, bash)")
+	flags.BoolVarP(&unset, "unset", "u", false, "Unset variables instead of setting them")
 
 	return cmd
 }
 
-func runEnv(cmd *cobra.Command, args []string) {
-	if len(args) < 1 || len(args) > 1 {
-		cmd.Usage()
-		os.Exit(-1)
+func runEnv(args []string, shell string, unset bool) error {
+	if len(args) != 1 {
+		return errors.New("this command requires exactly one argument")
 	}
 
-	// Data validations
-	if profileEnvShell != "bash" && profileEnvShell != "tcsh" {
-		log.Fatal("Shell is not correct")
+	if shell != "bash" && shell != "tcsh" {
+		return errors.New("shell is not correct")
 	}
 
 	cfg := adf.NewClient()
 	if err := cfg.Init(); err != nil {
-		log.Fatal(err)
+		return err
 	}
 
 	s, err := storage.NewDriver("sqlite", cfg.App.Dir.Root)
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 	defer s.End()
 
-	profile := s.GetProfile(args[0])
-
-	if profile == (driver.ProfileResult{}) {
-		log.Fatal("Profile does not exist")
+	profile, err := s.GetProfile(args[0])
+	if err != nil {
+		return errors.New("profile does not exist")
 	}
 
 	cfg.SetName(profile.Cert.Name)
 
 	data := Data{
-		Shell:     profileEnvShell,
-		Unset:     profileEnvUnset,
+		Shell:     shell,
+		Unset:     unset,
 		TLSVerify: "1",
 		Host:      profile.DockerHost,
 		CertPath:  cfg.Profile.CertDir,
 	}
 
-	t := template.New("Shell commands template")
-	t = template.Must(t.Parse(envTpl))
-
-	t.Execute(os.Stdout, data)
+	t := template.Must(template.New("Shell commands template").Parse(envTpl))
+	return t.Execute(os.Stdout, data)
 }
 
 var envTpl = `

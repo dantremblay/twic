@@ -1,10 +1,9 @@
 package engine
 
 import (
-	"os"
+	"errors"
 
-	log "github.com/Sirupsen/logrus"
-	"github.com/juliengk/go-utils/user"
+	"github.com/kassisol/twic/pkg/sysutil"
 	"github.com/spf13/cobra"
 )
 
@@ -13,25 +12,22 @@ func newRenewCommand() *cobra.Command {
 		Use:   "renew",
 		Short: "Renew Docker engine certificate",
 		Long:  renewDescription,
-		Run:   runRenew,
+		RunE:  runRenew,
 	}
 
 	return cmd
 }
 
-func runRenew(cmd *cobra.Command, args []string) {
-	u := user.New()
-
-	if !u.IsRoot() {
-		log.Fatal("You must be root to run engine subcommand")
+func runRenew(cmd *cobra.Command, args []string) error {
+	if !sysutil.IsRoot() {
+		return errors.New("you must be root to run engine subcommand")
 	}
 
 	if len(args) > 0 {
-		cmd.Usage()
-		os.Exit(-1)
+		return errors.New("this command takes no arguments")
 	}
 
-	log.Fatal("Not implemented yet")
+	return errors.New("not implemented yet")
 }
 
 var renewDescription = `

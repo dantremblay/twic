@@ -1,9 +1,8 @@
 package profile
 
 import (
-	"os"
+	"errors"
 
-	log "github.com/Sirupsen/logrus"
 	"github.com/kassisol/tsa/pkg/adf"
 	"github.com/kassisol/twic/storage"
 	"github.com/spf13/cobra"
@@ -15,30 +14,29 @@ func newRemoveCommand() *cobra.Command {
 		Aliases: []string{"remove"},
 		Short:   "Remove Docker profile",
 		Long:    removeDescription,
-		Run:     runRemove,
+		RunE:    runRemove,
 	}
 
 	return cmd
 }
 
-func runRemove(cmd *cobra.Command, args []string) {
-	if len(args) < 1 || len(args) > 1 {
-		cmd.Usage()
-		os.Exit(-1)
+func runRemove(cmd *cobra.Command, args []string) error {
+	if len(args) != 1 {
+		return errors.New("this command requires exactly one argument")
 	}
 
 	cfg := adf.NewClient()
 	if err := cfg.Init(); err != nil {
-		log.Fatal(err)
+		return err
 	}
 
 	s, err := storage.NewDriver("sqlite", cfg.App.Dir.Root)
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 	defer s.End()
 
-	s.RemoveProfile(args[0])
+	return s.RemoveProfile(args[0])
 }
 
 var removeDescription = `

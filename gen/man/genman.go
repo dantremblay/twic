@@ -2,8 +2,8 @@ package main
 
 import (
 	"fmt"
+	"os"
 
-	"github.com/juliengk/go-utils/filedir"
 	"github.com/kassisol/twic/cli/command/commands"
 	"github.com/spf13/cobra"
 	"github.com/spf13/cobra/doc"
@@ -13,7 +13,7 @@ func main() {
 	manPath := "/tmp/twic/man"
 	man8 := fmt.Sprintf("%s/man8", manPath)
 
-	if err := filedir.CreateDirIfNotExist(man8, true, 0755); err != nil {
+	if err := os.MkdirAll(man8, 0755); err != nil {
 		fmt.Println(err)
 	}
 

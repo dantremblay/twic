@@ -1,15 +1,15 @@
 package driver
 
 type CertResult struct {
-	Name     string
-	Type     string
-	CN       string
-	AltNames string
-	TSAURL   string
+	Name     string `json:"name"`
+	Type     string `json:"type"`
+	CN       string `json:"cn"`
+	AltNames string `json:"alt_names,omitempty"`
+	TSAURL   string `json:"tsa_url"`
 }
 
 type ProfileResult struct {
-	Name       string
-	Cert       CertResult
-	DockerHost string
+	Name       string     `json:"name"`
+	Cert       CertResult `json:"cert"`
+	DockerHost string     `json:"docker_host"`
 }

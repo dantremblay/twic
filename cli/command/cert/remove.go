@@ -18,6 +18,7 @@ func newRemoveCommand() *cobra.Command {
 	var (
 		tsaToken    string
 		tsaPassword string
+		byCN        bool
 	)
 
 	cmd := &cobra.Command{
@@ -26,18 +27,19 @@ func newRemoveCommand() *cobra.Command {
 		Short:   "Remove Docker client certificate",
 		Long:    removeDescription,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runRemove(args, tsaToken, tsaPassword)
+			return runRemove(args, tsaToken, tsaPassword, byCN)
 		},
 	}
 
 	flags := cmd.Flags()
 	flags.StringVarP(&tsaToken, "token", "t", "", "Token")
 	flags.StringVarP(&tsaPassword, "password", "p", "", "Password")
+	flags.BoolVarP(&byCN, "by-cn", "c", false, "Revoke certificate by Common Name instead of serial number")
 
 	return cmd
 }
 
-func runRemove(args []string, tsaToken, tsaPassword string) error {
+func runRemove(args []string, tsaToken, tsaPassword string, byCN bool) error {
 	if sysutil.IsRoot() {
 		return errors.New("you must not be root to remove a client certificate")
 	}
@@ -93,13 +95,19 @@ func runRemove(args []string, tsaToken, tsaPassword string) error {
 		}
 	}
 
-	certificate, err := pkix.NewCertificateFromPEMFile(cfg.TLS.CrtFile)
-	if err != nil {
-		return err
-	}
+	if byCN {
+		if err := clt.CertRevokeByCN(token, crt.CN); err != nil {
+			return err
+		}
+	} else {
+		certificate, err := pkix.NewCertificateFromPEMFile(cfg.TLS.CrtFile)
+		if err != nil {
+			return err
+		}
 
-	if err := clt.RevokeCertificate(token, int(certificate.Crt.SerialNumber.Int64())); err != nil {
-		return err
+		if err := clt.RevokeCertificate(token, int(certificate.Crt.SerialNumber.Int64())); err != nil {
+			return err
+		}
 	}
 
 	if err := s.RemoveCert(args[0]); err != nil {

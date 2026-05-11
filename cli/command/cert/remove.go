@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/juliengk/go-cert/pkix"
 	"github.com/kassisol/tsa/client"
@@ -97,7 +98,10 @@ func runRemove(args []string, tsaToken, tsaPassword string, byCN bool) error {
 
 	if byCN {
 		if err := clt.CertRevokeByCN(token, crt.CN); err != nil {
-			return err
+			if !isAlreadyRevokedOrExpired(err) {
+				return err
+			}
+			fmt.Fprintf(os.Stderr, "Warning: certificate already revoked or expired on server, removing locally\n")
 		}
 	} else {
 		certificate, err := pkix.NewCertificateFromPEMFile(cfg.TLS.CrtFile)
@@ -106,7 +110,10 @@ func runRemove(args []string, tsaToken, tsaPassword string, byCN bool) error {
 		}
 
 		if err := clt.RevokeCertificate(token, int(certificate.Crt.SerialNumber.Int64())); err != nil {
-			return err
+			if !isAlreadyRevokedOrExpired(err) {
+				return err
+			}
+			fmt.Fprintf(os.Stderr, "Warning: certificate already revoked or expired on server, removing locally\n")
 		}
 	}
 
@@ -115,6 +122,14 @@ func runRemove(args []string, tsaToken, tsaPassword string, byCN bool) error {
 	}
 
 	return os.RemoveAll(cfg.Profile.CertDir)
+}
+
+// isAlreadyRevokedOrExpired checks if the TSA error indicates the certificate
+// is no longer in a valid state (already revoked or expired).
+func isAlreadyRevokedOrExpired(err error) bool {
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "invalid revocation status") ||
+		strings.Contains(msg, "already revoked")
 }
 
 var removeDescription = `

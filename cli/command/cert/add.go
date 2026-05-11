@@ -1,45 +1,41 @@
 package cert
 
 import (
+	"errors"
+	"fmt"
 	"net/url"
 	"os"
 
-	log "github.com/Sirupsen/logrus"
 	"github.com/juliengk/go-cert/helpers"
 	"github.com/juliengk/go-cert/pkix"
-	"github.com/juliengk/go-utils"
-	"github.com/juliengk/go-utils/readinput"
-	"github.com/juliengk/go-utils/user"
-	"github.com/juliengk/go-utils/validation"
 	"github.com/kassisol/tsa/client"
 	"github.com/kassisol/tsa/pkg/adf"
 	"github.com/kassisol/twic/pkg/cert"
+	"github.com/kassisol/twic/pkg/input"
 	"github.com/kassisol/twic/storage"
-	"github.com/kassisol/twic/storage/driver"
+	"github.com/kassisol/twic/pkg/sysutil"
+	"github.com/kassisol/twic/pkg/validate"
 	"github.com/spf13/cobra"
 )
 
-var (
-	certType     string
-	certCN       string
-	certAltNames string
-
-	tsaURL      string
-	tsaToken    string
-	tsaUsername string
-	tsaPassword string
-)
-
 func newAddCommand() *cobra.Command {
+	var (
+		tsaURL      string
+		tsaToken    string
+		tsaUsername string
+		tsaPassword string
+	)
+
 	cmd := &cobra.Command{
 		Use:   "add [name]",
 		Short: "Add Docker client certificate",
 		Long:  addDescription,
-		Run:   runAdd,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runAdd(args, tsaURL, tsaToken, tsaUsername, tsaPassword)
+		},
 	}
 
 	flags := cmd.Flags()
-
 	flags.StringVarP(&tsaURL, "tsa-url", "c", "", "TSA URL")
 	flags.StringVarP(&tsaToken, "token", "t", "", "Token")
 	flags.StringVarP(&tsaUsername, "username", "u", "", "Username")
@@ -48,44 +44,33 @@ func newAddCommand() *cobra.Command {
 	return cmd
 }
 
-func runAdd(cmd *cobra.Command, args []string) {
-	var tsaurl string
-	var username string
-	var password string
-
-	go utils.RecoverFunc()
-
-	u := user.New()
-	if u.IsRoot() {
-		log.Fatal("You must not be root to add a client certificate type")
+func runAdd(args []string, tsaURL, tsaToken, tsaUsername, tsaPassword string) error {
+	if sysutil.IsRoot() {
+		return errors.New("you must not be root to add a client certificate type")
 	}
 
-	if len(args) < 1 || len(args) > 1 {
-		cmd.Usage()
-		os.Exit(-1)
+	if len(args) != 1 {
+		return errors.New("this command requires exactly one argument")
 	}
 
 	name := args[0]
-
 	certtype := "client"
 
-	if len(tsaURL) <= 0 {
-		tsaurl = readinput.ReadInput("TSA URL")
-	} else {
-		tsaurl = tsaURL
+	tsaurl := tsaURL
+	if len(tsaurl) == 0 {
+		tsaurl = input.ReadInput("TSA URL")
 	}
 
-	if len(tsaUsername) <= 0 {
-		username = readinput.ReadInput("Username")
-	} else {
-		username = tsaUsername
+	username := tsaUsername
+	if len(username) == 0 {
+		username = input.ReadInput("Username")
 	}
 
+	var password string
 	if len(tsaToken) == 0 {
-		if len(tsaPassword) <= 0 {
-			password = readinput.ReadPassword("Password")
-		} else {
-			password = tsaPassword
+		password = tsaPassword
+		if len(password) == 0 {
+			password = input.ReadPassword("Password")
 		}
 	}
 
@@ -93,125 +78,96 @@ func runAdd(cmd *cobra.Command, args []string) {
 
 	cfg := adf.NewClient()
 	if err := cfg.Init(); err != nil {
-		log.Fatal(err)
+		return err
 	}
 
 	cfg.SetName(name)
 
-	// DB
 	s, err := storage.NewDriver("sqlite", cfg.App.Dir.Root)
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 	defer s.End()
 
-	// Input validations
-	// IV - Name
-	if err = validation.IsValidName(args[0]); err != nil {
-		log.Fatal(err)
+	if err := validate.Name(name); err != nil {
+		return err
 	}
 
-	// Check if name already exists
-	if s.GetCert(name) != (driver.CertResult{}) {
-		log.Fatal("Name, ", name, ", already exists")
+	if existing, _ := s.GetCert(name); existing.Name != "" {
+		return fmt.Errorf("name %q already exists", name)
 	}
 
-	// IV - TSA URL
 	tu, err := url.Parse(tsaurl)
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
-
 	if tu.Scheme != "https" {
-		log.Fatal("TSA URL scheme should be https")
+		return errors.New("TSA URL scheme should be https")
 	}
 
-	// IV - Username
-	if len(username) <= 0 {
-		log.Fatal("Empty username is not allowed")
+	if len(username) == 0 {
+		return errors.New("empty username is not allowed")
 	}
 
-	// IV - Password
-	if len(tsaToken) == 0 {
-		if len(password) <= 0 {
-			log.Fatal("Empty password is not allowed")
-		}
+	if len(tsaToken) == 0 && len(password) == 0 {
+		return errors.New("empty password is not allowed")
 	}
 
-	// Create cert name directory
 	clt, err := client.New(tsaurl)
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 
-	// Get TSA URL directories
-	err = clt.GetDirectory()
-	if err != nil {
-		log.Fatal(err)
+	if err := clt.GetDirectory(); err != nil {
+		return err
 	}
 
-	// Authz
 	token := tsaToken
-	if len(tsaToken) == 0 {
+	if len(token) == 0 {
 		token, err = clt.GetToken(username, password, 0)
 		if err != nil {
-			log.Fatal(err)
+			return err
 		}
 	}
 
-	// Get CA public Key
 	caCrt, err := clt.GetCACertificate()
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 
-	err = pkix.ToPEMFile(cfg.TLS.CaFile, []byte(caCrt), 0444)
-	if err != nil {
-		log.Fatal(err)
+	if err := pkix.ToPEMFile(cfg.TLS.CaFile, []byte(caCrt), 0444); err != nil {
+		return err
 	}
 
-	// Certificate
-	// -- Client Part --
-	// Key pair
 	key, err := helpers.CreateKey(4096, cfg.TLS.KeyFile)
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 
-	// CSR
 	caCertificate, err := pkix.NewCertificateFromPEM([]byte(caCrt))
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 
 	ca := caCertificate.Crt.Subject
 	ou := cert.GetOU(ca.OrganizationalUnit[0])
 
-	ans := []string{}
-
-	csr, err := helpers.CreateCSR(ca.Country[0], ca.Province[0], ca.Locality[0], ca.Organization[0], ou, certcn, "", ans, key)
+	csr, err := helpers.CreateCSR(ca.Country[0], ca.Province[0], ca.Locality[0], ca.Organization[0], ou, certcn, "", []string{}, key)
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 
-	// Send CSR
-	cert, err := clt.GetCertificate(token, certtype, csr.Bytes, 12)
+	crt, err := clt.GetCertificate(token, certtype, csr.Bytes, 12)
 	if err != nil {
-		if err1 := os.RemoveAll(cfg.Profile.CertDir); err1 != nil {
-			log.Fatal(err)
-		}
-
-		log.Fatal(err)
+		_ = os.RemoveAll(cfg.Profile.CertDir)
+		return err
 	}
 
-	// Save Certificate
-	err = pkix.ToPEMFile(cfg.TLS.CrtFile, []byte(cert), 0444)
-	if err != nil {
-		log.Fatal(err)
+	if err := pkix.ToPEMFile(cfg.TLS.CrtFile, []byte(crt), 0444); err != nil {
+		return err
 	}
 
-	// Add data to DB
-	s.AddCert(name, certtype, certcn, "", tsaurl)
+	return s.AddCert(name, certtype, certcn, "", tsaurl)
 }
 
 var addDescription = `

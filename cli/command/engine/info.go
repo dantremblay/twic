@@ -1,56 +1,69 @@
 package engine
 
 import (
+	"errors"
 	"fmt"
-	"os"
 
-	log "github.com/Sirupsen/logrus"
 	"github.com/juliengk/go-cert/pkix"
-	"github.com/juliengk/go-utils/user"
-	"github.com/juliengk/stack/client"
 	"github.com/kassisol/tsa/pkg/adf"
 	"github.com/kassisol/twic/pkg/date"
+	"github.com/kassisol/twic/pkg/format"
+	"github.com/kassisol/twic/pkg/sysutil"
+	"github.com/kassisol/twic/pkg/urlutil"
 	"github.com/spf13/cobra"
 )
 
 func newInfoCommand() *cobra.Command {
+	var outputFormat string
+
 	cmd := &cobra.Command{
 		Use:   "info",
 		Short: "Information about Docker engine certificate",
 		Long:  infoDescription,
-		Run:   runInfo,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runInfo(args, outputFormat)
+		},
 	}
+
+	cmd.Flags().StringVarP(&outputFormat, "format", "f", "table", "Output format: table or json")
 
 	return cmd
 }
 
-func runInfo(cmd *cobra.Command, args []string) {
-	u := user.New()
+type engineInfoEntry struct {
+	TSAURL string `json:"tsa_url"`
+	CN     string `json:"cn"`
+	Expire string `json:"expire"`
+}
 
-	if !u.IsRoot() {
-		log.Fatal("You must be root to run engine subcommand")
+func runInfo(args []string, outputFormat string) error {
+	if !sysutil.IsRoot() {
+		return errors.New("you must be root to run engine subcommand")
 	}
 
 	if len(args) > 0 {
-		cmd.Usage()
-		os.Exit(-1)
+		return errors.New("this command takes no arguments")
+	}
+
+	if outputFormat != "table" && outputFormat != "json" {
+		return fmt.Errorf("unsupported format %q: use table or json", outputFormat)
 	}
 
 	cfg := adf.NewEngine()
 	if err := cfg.Init(); err != nil {
-		log.Fatal(err)
+		return err
 	}
 
 	certificate, err := pkix.NewCertificateFromPEMFile(cfg.TLS.CrtFile)
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 
 	crldp := certificate.Crt.CRLDistributionPoints[0]
 
-	url, err := client.ParseUrl(crldp)
+	url, err := urlutil.Parse(crldp)
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 
 	tsaurl := fmt.Sprintf("%s://%s", url.Scheme, url.Host)
@@ -61,9 +74,21 @@ func runInfo(cmd *cobra.Command, args []string) {
 	cn := certificate.Crt.Subject.CommonName
 	expire := date.ExpireDateString(certificate.Crt.NotAfter)
 
-	fmt.Println("TSA URL:", tsaurl)
-	fmt.Println("CN:", cn)
-	fmt.Println("Expire:", expire)
+	entry := engineInfoEntry{
+		TSAURL: tsaurl,
+		CN:     cn,
+		Expire: expire,
+	}
+
+	if outputFormat == "json" {
+		return format.PrintJSON(entry)
+	}
+
+	fmt.Println("TSA URL:", entry.TSAURL)
+	fmt.Println("CN:", entry.CN)
+	fmt.Println("Expire:", entry.Expire)
+
+	return nil
 }
 
 var infoDescription = `

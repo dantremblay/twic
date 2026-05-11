@@ -1,48 +1,76 @@
-TARGETS := $(shell ls scripts | grep -vE 'clean|dev|help|release')
+BINARY     := twic
+MODULE     := github.com/kassisol/twic
+OUTPUT     ?= bin/$(BINARY)
 
-TMUX := $(shell command -v tmux 2> /dev/null)
+# Version info
+COMMIT     := $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+DIRTY      := $(shell git status --porcelain --untracked-files=no 2>/dev/null)
+GIT_TAG    := $(shell git tag -l --contains HEAD 2>/dev/null | head -n 1)
 
-.dapper:
-	@echo Downloading dapper
-	@curl -sL https://releases.rancher.com/dapper/latest/dapper-`uname -s`-`uname -m|sed 's/v7l//'` > .dapper.tmp
-	@@chmod +x .dapper.tmp
-	@./.dapper.tmp -v
-	@mv .dapper.tmp .dapper
-
-.github-release:
-	@echo Downloading github-release
-	@curl -sL https://github.com/aktau/github-release/releases/download/v0.7.2/linux-amd64-github-release.tar.bz2 | tar xjO > .github-release.tmp
-	@@chmod +x .github-release.tmp
-	@./.github-release.tmp -v
-	@mv .github-release.tmp .github-release
-
-.tmass:
-	@echo Downloading tmass
-	@curl -sL https://github.com/juliengk/tmass/releases/download/0.3.0/tmass -o .tmass.tmp
-	@@chmod +x .tmass.tmp
-	@./.tmass.tmp version
-	@mv .tmass.tmp .tmass
-
-$(TARGETS): .dapper
-	./.dapper $@
-
-clean:
-	@./scripts/clean
-
-dev: .dapper .tmass
-ifndef TMUX
-	$(error "tmux is not available, please install it")
+ifdef DIRTY
+  GITSTATE := dirty
+  VERSION  ?= $(COMMIT)-dirty
+else ifdef GIT_TAG
+  GITSTATE := clean
+  VERSION  ?= $(GIT_TAG)
+else
+  GITSTATE := clean
+  VERSION  ?= $(COMMIT)
 endif
 
-	./.tmass load -l scripts/dev/tmux/ twic
-	tmux a -d -t twic
+LDFLAGS := -s -w \
+           -X $(MODULE)/version.Version=$(VERSION) \
+           -X $(MODULE)/version.GitCommit=$(COMMIT) \
+           -X $(MODULE)/version.GitState=$(GITSTATE) \
+           -X $(MODULE)/version.BuildDate=$(shell date +%s)
 
+# Default target
+.DEFAULT_GOAL := build
+
+## build: Build the binary
+build:
+	@echo "Building $(VERSION) ($(COMMIT))"
+	CGO_ENABLED=0 go build -ldflags "$(LDFLAGS)" -o $(OUTPUT) .
+
+## cross: Cross-compile for multiple platforms
+cross:
+	@echo "Cross-compiling $(VERSION)"
+	CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -ldflags "$(LDFLAGS)" -o $(OUTPUT)-darwin-amd64 .
+	CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -ldflags "$(LDFLAGS)" -o $(OUTPUT)-darwin-arm64 .
+	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags "$(LDFLAGS)" -o $(OUTPUT)-linux-amd64 .
+	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags "$(LDFLAGS)" -o $(OUTPUT)-linux-arm64 .
+
+## image: Build the Docker image
+image: build
+	docker build --build-arg version=$(VERSION) -t kassisol/twic-engine:$(VERSION) -f Dockerfile .
+
+## test: Run tests
+test:
+	go test ./...
+
+## vet: Run go vet
+vet:
+	go vet ./...
+
+## tidy: Tidy and vendor dependencies
+tidy:
+	go mod tidy
+	go mod vendor
+
+## clean: Remove build artifacts
+clean:
+	rm -rf bin/ dist/
+
+## version: Print version info
+version:
+	@echo "Version:  $(VERSION)"
+	@echo "Commit:   $(COMMIT)"
+	@echo "GitState: $(GITSTATE)"
+
+## help: Show this help
 help:
-	@./scripts/help
+	@echo "Usage: make [target]"
+	@echo ""
+	@sed -n 's/^## //p' $(MAKEFILE_LIST) | column -t -s ':'
 
-release: .github-release
-	./scripts/release
-
-.DEFAULT_GOAL := ci
-
-.PHONY: .dapper .github-release .tmass $(TARGETS) clean dev help release
+.PHONY: build build-static cross image test vet tidy clean version help

@@ -6,8 +6,10 @@ import (
 	"github.com/kassisol/twic/storage"
 	"github.com/kassisol/twic/storage/driver"
 
-	"github.com/jinzhu/gorm"
-	_ "github.com/jinzhu/gorm/dialects/sqlite"
+	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
+
+	"github.com/glebarez/sqlite"
 )
 
 func init() {
@@ -19,23 +21,26 @@ type Config struct {
 }
 
 func New(config string) (driver.Storager, error) {
-	debug := false
-
 	dbFilePath := path.Join(config, "data.db")
 
-	db, err := gorm.Open("sqlite3", dbFilePath)
+	db, err := gorm.Open(sqlite.Open(dbFilePath), &gorm.Config{
+		Logger: logger.Default.LogMode(logger.Silent),
+	})
 	if err != nil {
 		return nil, err
 	}
 
-	db.LogMode(debug)
-
-	db.AutoMigrate(&Cert{})
-	db.AutoMigrate(&Profile{})
+	if err := db.AutoMigrate(&Cert{}, &Profile{}); err != nil {
+		return nil, err
+	}
 
 	return &Config{DB: db}, nil
 }
 
 func (c *Config) End() {
-	c.DB.Close()
+	sqlDB, err := c.DB.DB()
+	if err != nil {
+		return
+	}
+	sqlDB.Close()
 }

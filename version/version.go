@@ -34,19 +34,29 @@ type VersionInfo struct {
 }
 
 func New() *VersionInfo {
-	i, err := strconv.ParseInt(BuildDate, 10, 64)
-	if err != nil {
-		panic(err)
+	buildDate := "unknown"
+	if BuildDate != "" {
+		if i, err := strconv.ParseInt(BuildDate, 10, 64); err == nil {
+			buildDate = time.Unix(i, 0).String()
+		}
 	}
 
-	tu := time.Unix(i, 0)
+	version := Version
+	if version == "" {
+		version = "dev"
+	}
+
+	gitCommit := GitCommit
+	if gitCommit == "" {
+		gitCommit = "unknown"
+	}
 
 	return &VersionInfo{
-		Version:   Version,
+		Version:   version,
 		GoVersion: runtime.Version(),
-		GitCommit: GitCommit,
+		GitCommit: gitCommit,
 		GitState:  GitState,
-		BuildDate: tu.String(),
+		BuildDate: buildDate,
 		Os:        runtime.GOOS,
 		Arch:      runtime.GOARCH,
 	}

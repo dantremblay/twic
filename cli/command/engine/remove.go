@@ -1,30 +1,37 @@
 package engine
 
 import (
+	"errors"
 	"fmt"
 	"os"
 
-	log "github.com/Sirupsen/logrus"
 	"github.com/juliengk/go-cert/pkix"
-	"github.com/juliengk/go-utils/readinput"
-	"github.com/juliengk/go-utils/user"
-	sclient "github.com/juliengk/stack/client"
 	"github.com/kassisol/tsa/client"
 	"github.com/kassisol/tsa/pkg/adf"
+	"github.com/kassisol/twic/pkg/input"
+	"github.com/kassisol/twic/pkg/sysutil"
+	"github.com/kassisol/twic/pkg/urlutil"
 	"github.com/spf13/cobra"
 )
 
 func newRemoveCommand() *cobra.Command {
+	var (
+		tsaToken    string
+		tsaUsername string
+		tsaPassword string
+	)
+
 	cmd := &cobra.Command{
 		Use:     "rm",
 		Aliases: []string{"remove"},
 		Short:   "Remove Docker engine certificate",
 		Long:    removeDescription,
-		Run:     runRemove,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runRemove(args, tsaToken, tsaUsername, tsaPassword)
+		},
 	}
 
 	flags := cmd.Flags()
-
 	flags.StringVarP(&tsaToken, "token", "t", "", "Token")
 	flags.StringVarP(&tsaUsername, "username", "u", "", "Username")
 	flags.StringVarP(&tsaPassword, "password", "p", "", "Password")
@@ -32,62 +39,52 @@ func newRemoveCommand() *cobra.Command {
 	return cmd
 }
 
-func runRemove(cmd *cobra.Command, args []string) {
-	var username string
-	var password string
-
-	u := user.New()
-
-	if !u.IsRoot() {
-		log.Fatal("You must be root to run engine subcommand")
+func runRemove(args []string, tsaToken, tsaUsername, tsaPassword string) error {
+	if !sysutil.IsRoot() {
+		return errors.New("you must be root to run engine subcommand")
 	}
 
 	if len(args) > 0 {
-		cmd.Usage()
-		os.Exit(-1)
+		return errors.New("this command takes no arguments")
+	}
+
+	var username, password string
+	if len(tsaToken) == 0 {
+		username = tsaUsername
+		if len(username) == 0 {
+			username = input.ReadPassword("Username")
+		}
+
+		password = tsaPassword
+		if len(password) == 0 {
+			password = input.ReadPassword("Password")
+		}
 	}
 
 	if len(tsaToken) == 0 {
-		if len(tsaUsername) <= 0 {
-			username = readinput.ReadPassword("Username")
-		} else {
-			username = tsaUsername
+		if len(username) == 0 {
+			return errors.New("empty username is not allowed")
 		}
-
-		if len(tsaPassword) <= 0 {
-			password = readinput.ReadPassword("Password")
-		} else {
-			password = tsaPassword
-		}
-	}
-
-	// Input validations
-	// IV - Password
-	if len(tsaToken) == 0 {
-		if len(username) <= 0 {
-			log.Fatal("Empty username is not allowed")
-		}
-
-		if len(password) <= 0 {
-			log.Fatal("Empty password is not allowed")
+		if len(password) == 0 {
+			return errors.New("empty password is not allowed")
 		}
 	}
 
 	cfg := adf.NewEngine()
 	if err := cfg.Init(); err != nil {
-		log.Fatal(err)
+		return err
 	}
 
 	certificate, err := pkix.NewCertificateFromPEMFile(cfg.TLS.CrtFile)
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 
 	crldp := certificate.Crt.CRLDistributionPoints[0]
 
-	url, err := sclient.ParseUrl(crldp)
+	url, err := urlutil.Parse(crldp)
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 
 	tsaurl := fmt.Sprintf("%s://%s", url.Scheme, url.Host)
@@ -97,42 +94,34 @@ func runRemove(cmd *cobra.Command, args []string) {
 
 	clt, err := client.New(tsaurl)
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 
-	// Get TSA URL directories
-	err = clt.GetDirectory()
-	if err != nil {
-		log.Fatal(err)
+	if err := clt.GetDirectory(); err != nil {
+		return err
 	}
 
-	// Authz
 	token := tsaToken
-	if len(tsaToken) == 0 {
+	if len(token) == 0 {
 		token, err = clt.GetToken(username, password, 0)
 		if err != nil {
-			log.Fatal(err)
+			return err
 		}
 	}
 
-	// Send Revocation Request
-	err = clt.RevokeCertificate(token, int(certificate.Crt.SerialNumber.Int64()))
-	if err != nil {
-		log.Fatal(err)
+	if err := clt.RevokeCertificate(token, int(certificate.Crt.SerialNumber.Int64())); err != nil {
+		return err
 	}
 
-	// Once done remove files
-	if err = os.Remove(cfg.TLS.CaFile); err != nil {
-		log.Fatal(err)
+	if err := os.Remove(cfg.TLS.CaFile); err != nil {
+		return err
 	}
 
-	if err = os.Remove(cfg.TLS.KeyFile); err != nil {
-		log.Fatal(err)
+	if err := os.Remove(cfg.TLS.KeyFile); err != nil {
+		return err
 	}
 
-	if err = os.Remove(cfg.TLS.CrtFile); err != nil {
-		log.Fatal(err)
-	}
+	return os.Remove(cfg.TLS.CrtFile)
 }
 
 var removeDescription = `

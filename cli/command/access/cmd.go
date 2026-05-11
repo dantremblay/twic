@@ -1,33 +1,32 @@
 package access
 
 import (
+	"errors"
 	"fmt"
-	"os"
 
-	log "github.com/Sirupsen/logrus"
-	"github.com/juliengk/go-utils"
-	"github.com/juliengk/go-utils/readinput"
+	"github.com/kassisol/twic/pkg/input"
 	"github.com/kassisol/tsa/client"
 	"github.com/spf13/cobra"
 )
 
-var (
-	tsaURL      string
-	tsaTTL      int
-	tsaUsername string
-	tsaPassword string
-)
-
 func NewCommand() *cobra.Command {
+	var (
+		tsaURL      string
+		tsaTTL      int
+		tsaUsername string
+		tsaPassword string
+	)
+
 	cmd := &cobra.Command{
 		Use:   "access",
 		Short: "Get TSA access token",
 		Long:  accessDescription,
-		Run:   runAccess,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runAccess(args, tsaURL, tsaTTL, tsaUsername, tsaPassword)
+		},
 	}
 
 	flags := cmd.Flags()
-
 	flags.StringVarP(&tsaURL, "tsa-url", "c", "", "TSA URL")
 	flags.IntVarP(&tsaTTL, "ttl", "t", 1440, "Token TTL")
 	flags.StringVarP(&tsaUsername, "username", "u", "", "Username")
@@ -36,68 +35,50 @@ func NewCommand() *cobra.Command {
 	return cmd
 }
 
-func runAccess(cmd *cobra.Command, args []string) {
-	var tsaurl string
-	var tsattl int
-	var username string
-	var password string
-
-	go utils.RecoverFunc()
-
+func runAccess(args []string, tsaURL string, tsaTTL int, tsaUsername, tsaPassword string) error {
 	if len(args) > 0 {
-		cmd.Usage()
-		os.Exit(-1)
+		return errors.New("this command takes no arguments")
 	}
 
-	if len(tsaURL) <= 0 {
-		tsaurl = readinput.ReadInput("TSA URL")
-	} else {
-		tsaurl = tsaURL
+	tsaurl := tsaURL
+	if len(tsaurl) == 0 {
+		tsaurl = input.ReadInput("TSA URL")
 	}
 
-	tsattl = tsaTTL
-
-	if len(tsaUsername) <= 0 {
-		username = readinput.ReadInput("Username")
-	} else {
-		username = tsaUsername
+	username := tsaUsername
+	if len(username) == 0 {
+		username = input.ReadInput("Username")
 	}
 
-	if len(tsaPassword) <= 0 {
-		password = readinput.ReadPassword("Password")
-	} else {
-		password = tsaPassword
+	password := tsaPassword
+	if len(password) == 0 {
+		password = input.ReadPassword("Password")
 	}
 
-	// Input validations
-	// IV - Username
-	if len(username) <= 0 {
-		log.Fatal("Empty username is not allowed")
+	if len(username) == 0 {
+		return errors.New("empty username is not allowed")
 	}
 
-	// IV - Password
-	if len(password) <= 0 {
-		log.Fatal("Empty password is not allowed")
+	if len(password) == 0 {
+		return errors.New("empty password is not allowed")
 	}
 
 	clt, err := client.New(tsaurl)
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 
-	// Get TSA URL directories
-	err = clt.GetDirectory()
-	if err != nil {
-		log.Fatal(err)
+	if err := clt.GetDirectory(); err != nil {
+		return err
 	}
 
-	// Authz
-	token, err := clt.GetToken(username, password, tsattl)
+	token, err := clt.GetToken(username, password, tsaTTL)
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 
 	fmt.Println(token)
+	return nil
 }
 
 var accessDescription = `

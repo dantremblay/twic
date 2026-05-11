@@ -1,8 +1,4 @@
-.dapper
-.github-release
-.tmass
 *.swp
 bin/
 dist/
-scripts/image/build/
-tmux*
+twic

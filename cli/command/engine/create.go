@@ -1,36 +1,46 @@
 package engine
 
 import (
+	"errors"
 	"fmt"
 	"os"
+	"slices"
+	"strings"
 
-	log "github.com/Sirupsen/logrus"
 	"github.com/juliengk/go-cert/helpers"
 	"github.com/juliengk/go-cert/pkix"
-	"github.com/juliengk/go-utils"
-	"github.com/juliengk/go-utils/filedir"
-	"github.com/juliengk/go-utils/readinput"
-	"github.com/juliengk/go-utils/user"
 	"github.com/kassisol/tsa/client"
 	"github.com/kassisol/tsa/pkg/adf"
 	"github.com/kassisol/twic/pkg/cert"
+	"github.com/kassisol/twic/pkg/input"
+	"github.com/kassisol/twic/pkg/sysutil"
 	"github.com/spf13/cobra"
 )
 
 func newCreateCommand() *cobra.Command {
+	var (
+		certCN       string
+		certAltNames string
+		duration     int
+		tsaURL       string
+		tsaToken     string
+		tsaUsername   string
+		tsaPassword   string
+	)
+
 	cmd := &cobra.Command{
 		Use:   "create",
 		Short: "Create Docker engine certificate",
 		Long:  createDescription,
-		Run:   runCreate,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runCreate(args, certCN, certAltNames, duration, tsaURL, tsaToken, tsaUsername, tsaPassword)
+		},
 	}
 
 	flags := cmd.Flags()
-
 	flags.StringVarP(&certCN, "common-name", "n", "", "Certificate Common Name")
 	flags.StringVarP(&certAltNames, "alt-names", "a", "", "Certificate Alternative Names")
 	flags.IntVarP(&duration, "duration", "d", 12, "Certificate duration (in months)")
-
 	flags.StringVarP(&tsaURL, "tsa-url", "c", "", "TSA URL")
 	flags.StringVarP(&tsaToken, "token", "t", "", "Token")
 	flags.StringVarP(&tsaUsername, "username", "u", "", "Username")
@@ -39,170 +49,133 @@ func newCreateCommand() *cobra.Command {
 	return cmd
 }
 
-func runCreate(cmd *cobra.Command, args []string) {
-	var certcn string
-	var certaltnames string
-
-	var tsaurl string
-	var username string
-	var password string
-
-	go utils.RecoverFunc()
-
-	u := user.New()
-	if !u.IsRoot() {
-		log.Fatal("You must be root to run engine subcommand")
+func runCreate(args []string, certCN, certAltNames string, duration int, tsaURL, tsaToken, tsaUsername, tsaPassword string) (retErr error) {
+	if !sysutil.IsRoot() {
+		return errors.New("you must be root to run engine subcommand")
 	}
 
 	if len(args) > 0 {
-		cmd.Usage()
-		os.Exit(-1)
+		return errors.New("this command takes no arguments")
 	}
 
 	certtype := "engine"
 
-	if len(certCN) <= 0 {
-		certcn = readinput.ReadInput("Common Name (CN)")
-	} else {
-		certcn = certCN
+	certcn := certCN
+	if len(certcn) == 0 {
+		certcn = input.ReadInput("Common Name (CN)")
 	}
 
-	if len(certAltNames) <= 0 {
-		certaltnames = readinput.ReadInput("Alt Names")
-	} else {
-		certaltnames = certAltNames
+	certaltnames := certAltNames
+	if len(certaltnames) == 0 {
+		certaltnames = input.ReadInput("Alt Names")
 	}
 
-	if len(tsaURL) <= 0 {
-		tsaurl = readinput.ReadInput("TSA URL")
-	} else {
-		tsaurl = tsaURL
+	tsaurl := tsaURL
+	if len(tsaurl) == 0 {
+		tsaurl = input.ReadInput("TSA URL")
 	}
 
+	var username, password string
 	if len(tsaToken) == 0 {
-		if len(tsaUsername) <= 0 {
-			username = readinput.ReadInput("Username")
-		} else {
-			username = tsaUsername
+		username = tsaUsername
+		if len(username) == 0 {
+			username = input.ReadInput("Username")
 		}
 
-		if len(tsaPassword) <= 0 {
-			password = readinput.ReadPassword("Password")
-		} else {
-			password = tsaPassword
+		password = tsaPassword
+		if len(password) == 0 {
+			password = input.ReadPassword("Password")
 		}
 	}
 
 	cfg := adf.NewEngine()
 	if err := cfg.Init(); err != nil {
-		log.Fatal(err)
+		return err
 	}
 
-	// Input validations
 	if len(tsaToken) == 0 {
-		// IV - Username
-		if len(username) <= 0 {
-			log.Fatal("Empty username is not allowed")
+		if len(username) == 0 {
+			return errors.New("empty username is not allowed")
 		}
-
-		// IV - Password
-		if len(password) <= 0 {
-			log.Fatal("Empty password is not allowed")
+		if len(password) == 0 {
+			return errors.New("empty password is not allowed")
 		}
 	}
 
-	// Create cert name directory
+	// Cleanup on failure
 	defer func() {
-		if r := recover(); r != nil {
-			if filedir.FileExists(cfg.TLS.CaFile) {
-				if err := os.Remove(cfg.TLS.CaFile); err != nil {
-					log.Fatal(err)
-				}
+		if retErr != nil {
+			if sysutil.FileExists(cfg.TLS.CaFile) {
+				os.Remove(cfg.TLS.CaFile)
 			}
-			if filedir.FileExists(cfg.TLS.KeyFile) {
-				if err := os.Remove(cfg.TLS.KeyFile); err != nil {
-					log.Fatal(err)
-				}
+			if sysutil.FileExists(cfg.TLS.KeyFile) {
+				os.Remove(cfg.TLS.KeyFile)
 			}
-
-			log.Fatal(r)
 		}
 	}()
 
 	clt, err := client.New(tsaurl)
 	if err != nil {
-		panic(err)
+		return err
 	}
 
-	// Get TSA URL directories
-	err = clt.GetDirectory()
-	if err != nil {
-		panic(err)
+	if err := clt.GetDirectory(); err != nil {
+		return err
 	}
 
-	// Authz
 	token := tsaToken
-	if len(tsaToken) == 0 {
+	if len(token) == 0 {
 		token, err = clt.GetToken(username, password, 5)
 		if err != nil {
-			panic(err)
+			return err
 		}
 	}
 
-	// Get CA public Key
 	caCrt, err := clt.GetCACertificate()
 	if err != nil {
-		panic(err)
+		return err
 	}
 
-	err = pkix.ToPEMFile(cfg.TLS.CaFile, []byte(caCrt), 0444)
-	if err != nil {
-		panic(err)
+	if err := pkix.ToPEMFile(cfg.TLS.CaFile, []byte(caCrt), 0444); err != nil {
+		return err
 	}
 
-	// Certificate
-	// -- Client Part --
-	// Key pair
 	key, err := helpers.CreateKey(4096, cfg.TLS.KeyFile)
 	if err != nil {
-		panic(err)
+		return err
 	}
 
-	// CSR
 	caCertificate, err := pkix.NewCertificateFromPEM([]byte(caCrt))
 	if err != nil {
-		panic(err)
+		return err
 	}
 
 	ca := caCertificate.Crt.Subject
 	ou := cert.GetOU(ca.OrganizationalUnit[0])
 
-	ans := utils.CreateSlice(certaltnames, ",")
-
-	if !utils.StringInSlice(certcn, ans, true) {
+	ans := strings.Split(certaltnames, ",")
+	if !slices.Contains(ans, certcn) {
 		ans = append(ans, certcn)
 	}
 
 	csr, err := helpers.CreateCSR(ca.Country[0], ca.Province[0], ca.Locality[0], ca.Organization[0], ou, certcn, "", ans, key)
 	if err != nil {
-		panic(err)
+		return err
 	}
 
-	// Send CSR
-	cert, err := clt.GetCertificate(token, certtype, csr.Bytes, duration)
+	crt, err := clt.GetCertificate(token, certtype, csr.Bytes, duration)
 	if err != nil {
-		panic(err)
+		return err
 	}
 
-	// Save Certificate
-	err = pkix.ToPEMFile(cfg.TLS.CrtFile, []byte(cert), 0444)
-	if err != nil {
-		panic(err)
+	if err := pkix.ToPEMFile(cfg.TLS.CrtFile, []byte(crt), 0444); err != nil {
+		return err
 	}
 
 	fmt.Println("Docker engine certificates created in the directory", cfg.CertsDir, ".")
-
 	fmt.Printf("\nTo configure the Docker Daemon, add the following parameters:\n\n--tlsverify --tlscacert=%s --tlskey=%s --tlscert=%s -H tcp://0.0.0.0:2376\n\n", cfg.TLS.CaFile, cfg.TLS.KeyFile, cfg.TLS.CrtFile)
+
+	return nil
 }
 
 var createDescription = `

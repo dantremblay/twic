@@ -5,14 +5,14 @@ import (
 )
 
 type Model struct {
-	ID        uint      `gorm:"primary_key"`
-	CreatedAt time.Time `gorm:"created_at"`
+	ID        uint      `gorm:"primaryKey"`
+	CreatedAt time.Time
 }
 
 type Cert struct {
 	Model
 
-	Name     string `gorm:"unique;"`
+	Name     string `gorm:"uniqueIndex"`
 	Type     string
 	CN       string
 	AltNames string
@@ -23,7 +23,7 @@ type Cert struct {
 type Profile struct {
 	Model
 
-	Name       string `gorm:"unique;"`
+	Name       string `gorm:"uniqueIndex"`
 	Cert       Cert
 	CertID     uint
 	DockerHost string

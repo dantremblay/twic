@@ -4,18 +4,6 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var (
-	certType     string
-	certCN       string
-	certAltNames string
-	duration     int
-
-	tsaURL      string
-	tsaToken    string
-	tsaUsername string
-	tsaPassword string
-)
-
 func NewCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "engine",

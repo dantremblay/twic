@@ -1,68 +1,101 @@
 package cert
 
 import (
+	"errors"
 	"fmt"
-	"os"
-	"text/tabwriter"
 
-	log "github.com/Sirupsen/logrus"
 	"github.com/juliengk/go-cert/pkix"
 	"github.com/kassisol/tsa/pkg/adf"
 	"github.com/kassisol/twic/pkg/date"
+	"github.com/kassisol/twic/pkg/format"
 	"github.com/kassisol/twic/storage"
 	"github.com/spf13/cobra"
 )
 
 func newListCommand() *cobra.Command {
+	var outputFormat string
+
 	cmd := &cobra.Command{
 		Use:     "ls",
 		Aliases: []string{"list"},
 		Short:   "List Docker client certificates",
 		Long:    listDescription,
-		Run:     runList,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runList(args, outputFormat)
+		},
 	}
+
+	cmd.Flags().StringVarP(&outputFormat, "format", "f", "table", "Output format: table or json")
 
 	return cmd
 }
 
-func runList(cmd *cobra.Command, args []string) {
+type certListEntry struct {
+	Name   string `json:"name"`
+	Type   string `json:"type"`
+	CN     string `json:"cn"`
+	TSAURL string `json:"tsa_url"`
+	Expire string `json:"expire,omitempty"`
+}
+
+func runList(args []string, outputFormat string) error {
 	if len(args) > 0 {
-		cmd.Usage()
-		os.Exit(-1)
+		return errors.New("this command takes no arguments")
+	}
+
+	if outputFormat != "table" && outputFormat != "json" {
+		return fmt.Errorf("unsupported format %q: use table or json", outputFormat)
 	}
 
 	cfg := adf.NewClient()
 	if err := cfg.Init(); err != nil {
-		log.Fatal(err)
+		return err
 	}
 
 	s, err := storage.NewDriver("sqlite", cfg.App.Dir.Root)
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 	defer s.End()
 
-	certs := s.ListCerts()
+	certs, err := s.ListCerts()
+	if err != nil {
+		return err
+	}
 
-	if len(certs) > 0 {
-		w := tabwriter.NewWriter(os.Stdout, 20, 1, 2, ' ', 0)
-		fmt.Fprintln(w, "NAME\tTYPE\tCN\tTSA URL\tEXPIRE")
+	var entries []certListEntry
+	for _, c := range certs {
+		var expire string
 
-		for _, c := range certs {
-			var expire string
+		cfg.SetName(c.Name)
 
-			cfg.SetName(c.Name)
-
-			certificate, err := pkix.NewCertificateFromPEMFile(cfg.TLS.CrtFile)
-			if err == nil {
-				expire = date.ExpireDateString(certificate.Crt.NotAfter)
-			}
-
-			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", c.Name, c.Type, c.CN, c.TSAURL, expire)
+		certificate, err := pkix.NewCertificateFromPEMFile(cfg.TLS.CrtFile)
+		if err == nil {
+			expire = date.ExpireDateString(certificate.Crt.NotAfter)
 		}
 
-		w.Flush()
+		entries = append(entries, certListEntry{
+			Name:   c.Name,
+			Type:   c.Type,
+			CN:     c.CN,
+			TSAURL: c.TSAURL,
+			Expire: expire,
+		})
 	}
+
+	if outputFormat == "json" {
+		return format.PrintJSON(entries)
+	}
+
+	if len(entries) > 0 {
+		var rows [][]string
+		for _, e := range entries {
+			rows = append(rows, []string{e.Name, e.Type, e.CN, e.TSAURL, e.Expire})
+		}
+		format.Table([]string{"NAME", "TYPE", "CN", "TSA URL", "EXPIRE"}, rows)
+	}
+
+	return nil
 }
 
 var listDescription = `

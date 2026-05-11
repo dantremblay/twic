@@ -1,9 +1,8 @@
 package cert
 
 import (
+	"slices"
 	"strings"
-
-	"github.com/juliengk/go-utils"
 )
 
 func GetOU(ou string) string {
@@ -15,10 +14,10 @@ func GetOU(ou string) string {
 	oldou := strings.Split(ou, " ")
 
 	if len(oldou) > 1 {
-		newou := []string{}
+		var newou []string
 
 		for _, word := range oldou {
-			if !utils.StringInSlice(word, words, true) {
+			if !slices.Contains(words, word) {
 				newou = append(newou, word)
 			}
 		}

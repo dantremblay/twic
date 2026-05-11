@@ -17,16 +17,20 @@
 package main
 
 import (
-	"github.com/juliengk/go-utils"
+	"fmt"
+	"os"
+
 	"github.com/kassisol/twic/cli/command/commands"
 	"github.com/spf13/cobra"
 )
 
 func newCommand() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "twic",
-		Short: "TWIC is an application to manage Docker user certificates",
-		Long:  "TWIC is an application to manage Docker user certificates",
+		Use:           "twic",
+		Short:         "TWIC is an application to manage Docker user certificates",
+		Long:          "TWIC is an application to manage Docker user certificates",
+		SilenceUsage:  true,
+		SilenceErrors: true,
 	}
 
 	cmd.SetHelpTemplate(helpTemplate)
@@ -40,7 +44,8 @@ func newCommand() *cobra.Command {
 func main() {
 	cmd := newCommand()
 	if err := cmd.Execute(); err != nil {
-		utils.Exit(err)
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
 	}
 }
 

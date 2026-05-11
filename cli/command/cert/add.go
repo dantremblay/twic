@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"strings"
 
 	"github.com/juliengk/go-cert/helpers"
 	"github.com/juliengk/go-cert/pkix"
@@ -160,6 +161,9 @@ func runAdd(args []string, tsaURL, tsaToken, tsaUsername, tsaPassword string) er
 	crt, err := clt.GetCertificate(token, certtype, csr.Bytes, 12)
 	if err != nil {
 		_ = os.RemoveAll(cfg.Profile.CertDir)
+		if isCertAlreadyExists(err) {
+			return fmt.Errorf("%s\nIt may have been created from another host. To re-issue, revoke it first:\n\n    twic cert rm %s --by-cn -p <password>\n\nThen re-run this command.", err.Error(), name)
+		}
 		return err
 	}
 
@@ -174,3 +178,9 @@ var addDescription = `
 Add Docker client certificate
 
 `
+
+// isCertAlreadyExists checks if the TSA error indicates a valid certificate
+// already exists for this user.
+func isCertAlreadyExists(err error) bool {
+	return strings.Contains(strings.ToLower(err.Error()), "already exists and is valid")
+}

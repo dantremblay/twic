@@ -1,6 +1,6 @@
 module github.com/kassisol/tsa
 
-go 1.25
+go 1.26.3
 
 require (
 	github.com/juliengk/go-cert v0.0.0-20180306183847-781fb30cc8dc

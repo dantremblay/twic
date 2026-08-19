@@ -57,6 +57,28 @@ tidy:
 	go mod tidy
 	go mod vendor
 
+## generate: Generate man pages and shell completions
+generate:
+	go run gen/man/genman.go
+	go run gen/shellcompletion/genshellcompletion.go
+
+## package-rpm: Build RPM package (requires nfpm)
+package-rpm: RELEASE ?= 1
+package-rpm:
+	@mkdir -p dist
+	VERSION=$(VERSION) RELEASE=$(RELEASE) GOARCH=$(or $(TARGETARCH),amd64) \
+		nfpm pkg --packager rpm --target dist/
+
+## package-deb: Build DEB package (requires nfpm)
+package-deb: RELEASE ?= 1
+package-deb:
+	@mkdir -p dist
+	VERSION=$(VERSION) RELEASE=$(RELEASE) GOARCH=$(or $(TARGETARCH),amd64) \
+		nfpm pkg --packager deb --target dist/
+
+## packages: Build all packages
+packages: generate package-rpm package-deb
+
 ## clean: Remove build artifacts
 clean:
 	rm -rf bin/ dist/
@@ -73,4 +95,4 @@ help:
 	@echo ""
 	@sed -n 's/^## //p' $(MAKEFILE_LIST) | column -t -s ':'
 
-.PHONY: build build-static cross image test vet tidy clean version help
+.PHONY: build build-static cross image test vet tidy clean version help generate package-rpm package-deb packages

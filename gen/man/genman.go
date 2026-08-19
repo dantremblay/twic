@@ -10,11 +10,15 @@ import (
 )
 
 func main() {
-	manPath := "/tmp/twic/man"
+	manPath := os.Getenv("TWIC_MAN_PATH")
+	if manPath == "" {
+		manPath = "dist/man"
+	}
 	man8 := fmt.Sprintf("%s/man8", manPath)
 
 	if err := os.MkdirAll(man8, 0755); err != nil {
 		fmt.Println(err)
+		os.Exit(1)
 	}
 
 	header := &doc.GenManHeader{
@@ -34,5 +38,6 @@ func main() {
 
 	if err := doc.GenManTreeFromOpts(cmd, opts); err != nil {
 		fmt.Println(err)
+		os.Exit(1)
 	}
 }

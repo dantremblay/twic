@@ -51,6 +51,28 @@ docker ps
 
 Use `twic <command> --help` to see all available options.
 
+### Engine certificates
+
+On the Docker host itself, the `engine` commands manage the daemon's server certificate (run as root):
+
+```bash
+# Create the engine certificate (writes to /etc/docker/tls)
+sudo twic engine create --common-name docker.example.com --tsa-url https://tsa.example.com --username alice
+
+# Show the current engine certificate (CN, TSA URL, expiry)
+sudo twic engine info
+
+# Renew the engine certificate before it expires, preserving the CN and
+# Subject Alternative Names of the existing certificate
+sudo twic engine renew --username alice
+```
+
+After renewing, restart the Docker daemon for the new certificate to take effect:
+
+```bash
+sudo systemctl restart docker
+```
+
 ## Building
 
 ### Prerequisites

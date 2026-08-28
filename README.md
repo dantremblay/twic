@@ -59,7 +59,7 @@ On the Docker host itself, the `engine` commands manage the daemon's server cert
 # Create the engine certificate (writes to /etc/docker/tls)
 sudo twic engine create --common-name docker.example.com --tsa-url https://tsa.example.com --username alice
 
-# Show the current engine certificate (CN, TSA URL, expiry)
+# Show the current engine certificate (CN, TSA URL, alt names, expiry)
 sudo twic engine info
 
 # Renew the engine certificate before it expires, preserving the CN and

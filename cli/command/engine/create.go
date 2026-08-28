@@ -3,6 +3,7 @@ package engine
 import (
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"slices"
 	"strings"
@@ -24,8 +25,8 @@ func newCreateCommand() *cobra.Command {
 		duration     int
 		tsaURL       string
 		tsaToken     string
-		tsaUsername   string
-		tsaPassword   string
+		tsaUsername  string
+		tsaPassword  string
 	)
 
 	cmd := &cobra.Command{
@@ -73,6 +74,14 @@ func runCreate(args []string, certCN, certAltNames string, duration int, tsaURL,
 	tsaurl := tsaURL
 	if len(tsaurl) == 0 {
 		tsaurl = input.ReadInput("TSA URL")
+	}
+
+	tu, err := url.Parse(tsaurl)
+	if err != nil {
+		return err
+	}
+	if tu.Scheme != "https" {
+		return errors.New("TSA URL scheme should be https")
 	}
 
 	var username, password string
@@ -150,15 +159,17 @@ func runCreate(args []string, certCN, certAltNames string, duration int, tsaURL,
 		return err
 	}
 
-	ca := caCertificate.Crt.Subject
-	ou := cert.GetOU(ca.OrganizationalUnit[0])
+	subject, err := cert.SubjectFromCA(caCertificate.Crt.Subject)
+	if err != nil {
+		return err
+	}
 
 	ans := strings.Split(certaltnames, ",")
 	if !slices.Contains(ans, certcn) {
 		ans = append(ans, certcn)
 	}
 
-	csr, err := helpers.CreateCSR(ca.Country[0], ca.Province[0], ca.Locality[0], ca.Organization[0], ou, certcn, "", ans, key)
+	csr, err := helpers.CreateCSR(subject.Country, subject.Province, subject.Locality, subject.Organization, subject.OrganizationalUnit, certcn, "", ans, key)
 	if err != nil {
 		return err
 	}

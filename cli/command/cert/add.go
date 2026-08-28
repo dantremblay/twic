@@ -13,9 +13,9 @@ import (
 	"github.com/kassisol/tsa/pkg/adf"
 	"github.com/kassisol/twic/pkg/cert"
 	"github.com/kassisol/twic/pkg/input"
-	"github.com/kassisol/twic/storage"
 	"github.com/kassisol/twic/pkg/sysutil"
 	"github.com/kassisol/twic/pkg/validate"
+	"github.com/kassisol/twic/storage"
 	"github.com/spf13/cobra"
 )
 
@@ -77,22 +77,24 @@ func runAdd(args []string, tsaURL, tsaToken, tsaUsername, tsaPassword string) er
 
 	certcn := username
 
+	if err := validate.Name(name); err != nil {
+		return err
+	}
+
 	cfg := adf.NewClient()
 	if err := cfg.Init(); err != nil {
 		return err
 	}
 
-	cfg.SetName(name)
+	if err := cfg.SetName(name); err != nil {
+		return err
+	}
 
 	s, err := storage.NewDriver("sqlite", cfg.App.Dir.Root)
 	if err != nil {
 		return err
 	}
 	defer s.End()
-
-	if err := validate.Name(name); err != nil {
-		return err
-	}
 
 	if existing, _ := s.GetCert(name); existing.Name != "" {
 		return fmt.Errorf("name %q already exists", name)
@@ -150,10 +152,12 @@ func runAdd(args []string, tsaURL, tsaToken, tsaUsername, tsaPassword string) er
 		return err
 	}
 
-	ca := caCertificate.Crt.Subject
-	ou := cert.GetOU(ca.OrganizationalUnit[0])
+	subject, err := cert.SubjectFromCA(caCertificate.Crt.Subject)
+	if err != nil {
+		return err
+	}
 
-	csr, err := helpers.CreateCSR(ca.Country[0], ca.Province[0], ca.Locality[0], ca.Organization[0], ou, certcn, "", []string{}, key)
+	csr, err := helpers.CreateCSR(subject.Country, subject.Province, subject.Locality, subject.Organization, subject.OrganizationalUnit, certcn, "", []string{}, key)
 	if err != nil {
 		return err
 	}

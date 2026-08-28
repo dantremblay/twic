@@ -54,7 +54,9 @@ func runRemove(args []string, tsaToken, tsaPassword string, byCN bool) error {
 		return err
 	}
 
-	cfg.SetName(args[0])
+	if err := cfg.SetName(args[0]); err != nil {
+		return err
+	}
 
 	s, err := storage.NewDriver("sqlite", cfg.App.Dir.Root)
 	if err != nil {

@@ -4,8 +4,8 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/kassisol/twic/pkg/input"
 	"github.com/kassisol/tsa/client"
+	"github.com/kassisol/twic/pkg/input"
 	"github.com/spf13/cobra"
 )
 

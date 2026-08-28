@@ -9,7 +9,9 @@ import (
 	"github.com/juliengk/go-cert/pkix"
 	"github.com/kassisol/tsa/client"
 	"github.com/kassisol/tsa/pkg/adf"
+	"github.com/kassisol/twic/pkg/cert"
 	"github.com/kassisol/twic/pkg/input"
+	"github.com/kassisol/twic/pkg/sysutil"
 	"github.com/kassisol/twic/storage"
 	"github.com/spf13/cobra"
 )
@@ -37,6 +39,10 @@ func newRenewCommand() *cobra.Command {
 }
 
 func runRenew(args []string, tsaToken, tsaPassword string) error {
+	if sysutil.IsRoot() {
+		return errors.New("you must not be root to renew a client certificate")
+	}
+
 	if len(args) != 1 {
 		return errors.New("this command requires exactly one argument")
 	}
@@ -48,7 +54,9 @@ func runRenew(args []string, tsaToken, tsaPassword string) error {
 		return err
 	}
 
-	cfg.SetName(name)
+	if err := cfg.SetName(name); err != nil {
+		return err
+	}
 
 	s, err := storage.NewDriver("sqlite", cfg.App.Dir.Root)
 	if err != nil {
@@ -85,7 +93,12 @@ func runRenew(args []string, tsaToken, tsaPassword string) error {
 		return err
 	}
 
-	csr, err := helpers.CreateCSR(oldcert.Crt.Subject.Country[0], oldcert.Crt.Subject.Province[0], oldcert.Crt.Subject.Locality[0], oldcert.Crt.Subject.Organization[0], oldcert.Crt.Subject.OrganizationalUnit[0], oldcert.Crt.Subject.CommonName, "", []string{}, key)
+	subject, err := cert.SubjectFromCA(oldcert.Crt.Subject)
+	if err != nil {
+		return err
+	}
+
+	csr, err := helpers.CreateCSR(subject.Country, subject.Province, subject.Locality, subject.Organization, subject.OrganizationalUnit, oldcert.Crt.Subject.CommonName, "", []string{}, key)
 	if err != nil {
 		return err
 	}

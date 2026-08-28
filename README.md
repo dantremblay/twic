@@ -65,6 +65,9 @@ sudo twic engine info
 # Renew the engine certificate before it expires, preserving the CN and
 # Subject Alternative Names of the existing certificate
 sudo twic engine renew --username alice
+
+# Or renew using an existing TSA token instead of username/password
+sudo twic engine renew --token <token>
 ```
 
 After renewing, restart the Docker daemon for the new certificate to take effect:

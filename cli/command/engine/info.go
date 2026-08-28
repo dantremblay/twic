@@ -3,6 +3,7 @@ package engine
 import (
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/juliengk/go-cert/pkix"
 	"github.com/kassisol/tsa/pkg/adf"
@@ -31,9 +32,10 @@ func newInfoCommand() *cobra.Command {
 }
 
 type engineInfoEntry struct {
-	TSAURL string `json:"tsa_url"`
-	CN     string `json:"cn"`
-	Expire string `json:"expire"`
+	TSAURL   string   `json:"tsa_url"`
+	CN       string   `json:"cn"`
+	AltNames []string `json:"alt_names"`
+	Expire   string   `json:"expire"`
 }
 
 func runInfo(args []string, outputFormat string) error {
@@ -72,12 +74,14 @@ func runInfo(args []string, outputFormat string) error {
 	}
 
 	cn := certificate.Crt.Subject.CommonName
+	altnames := sanStrings(certificate)
 	expire := date.ExpireDateString(certificate.Crt.NotAfter)
 
 	entry := engineInfoEntry{
-		TSAURL: tsaurl,
-		CN:     cn,
-		Expire: expire,
+		TSAURL:   tsaurl,
+		CN:       cn,
+		AltNames: altnames,
+		Expire:   expire,
 	}
 
 	if outputFormat == "json" {
@@ -86,6 +90,7 @@ func runInfo(args []string, outputFormat string) error {
 
 	fmt.Println("TSA URL:", entry.TSAURL)
 	fmt.Println("CN:", entry.CN)
+	fmt.Println("Alt Names:", strings.Join(entry.AltNames, ", "))
 	fmt.Println("Expire:", entry.Expire)
 
 	return nil

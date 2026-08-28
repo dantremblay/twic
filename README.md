@@ -9,6 +9,52 @@ TWIC is an open source project for managing Docker certificates to connect to th
 3. User add a new profile to connect to Docker host.
 6. User can use new profile to set Docker environment variables for connecting to Docker host using TLS.
 
+## Building
+
+### Prerequisites
+
+- Go 1.26+ 
+- [nFPM](https://nfpm.goreleaser.com/) (for package builds only)
+
+```bash
+go install github.com/goreleaser/nfpm/v2/cmd/nfpm@latest
+```
+
+### Build the binary
+
+```bash
+make build
+```
+
+The binary is written to `bin/twic`.
+
+### Cross-compile
+
+```bash
+make cross
+```
+
+Produces binaries for linux/amd64, linux/arm64, darwin/amd64, and darwin/arm64 under `bin/`.
+
+### Build packages (RPM and DEB)
+
+```bash
+# Build both RPM and DEB
+make packages
+
+# Or individually
+make package-rpm
+make package-deb
+```
+
+Packages are written to `dist/`. The version is derived from git tags automatically.
+
+To build for a different architecture:
+
+```bash
+TARGETARCH=arm64 make packages
+```
+
 ## Getting Started & Documentation
 
 All documentation is available on the [Harbormaster website](http://harbormaster.io/docs/twic/).

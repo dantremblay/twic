@@ -9,11 +9,15 @@ import (
 )
 
 func main() {
-	scPath := "/tmp/twic/shellcompletion"
+	scPath := os.Getenv("TWIC_SC_PATH")
+	if scPath == "" {
+		scPath = "dist/shellcompletion"
+	}
 	bashTarget := fmt.Sprintf("%s/bash", scPath)
 
 	if err := os.MkdirAll(scPath, 0755); err != nil {
 		fmt.Println(err)
+		os.Exit(1)
 	}
 
 	cmd := &cobra.Command{Use: "twic"}
@@ -22,5 +26,6 @@ func main() {
 
 	if err := cmd.GenBashCompletionFile(bashTarget); err != nil {
 		fmt.Println(err)
+		os.Exit(1)
 	}
 }

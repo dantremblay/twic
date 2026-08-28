@@ -1,0 +1,34 @@
+name: twic
+arch: "${GOARCH}"
+platform: linux
+version: "${VERSION}"
+release: "${RELEASE}"
+maintainer: "Kassisol <support@kassisol.com>"
+description: "Docker TLS certificate client for TSA"
+homepage: "https://github.com/kassisol/twic"
+license: "GPL-3.0"
+vendor: "Kassisol"
+section: "utils"
+
+contents:
+  - src: bin/twic
+    dst: /usr/bin/twic
+    file_info:
+      mode: 0755
+
+  - src: dist/man/man8/
+    dst: /usr/share/man/man8/
+    type: tree
+    file_info:
+      mode: 0644
+
+  - src: dist/shellcompletion/bash
+    dst: /usr/share/bash-completion/completions/twic
+    file_info:
+      mode: 0644
+
+rpm:
+  group: "Tools/Docker"
+  summary: "Docker TLS certificate client for TSA"
+
+deb: {}

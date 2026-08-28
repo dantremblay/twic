@@ -62,16 +62,25 @@ generate:
 	go run gen/man/genman.go
 	go run gen/shellcompletion/genshellcompletion.go
 
+check-nfpm:
+	@command -v nfpm >/dev/null 2>&1 || { \
+		echo "Error: nfpm not found on PATH."; \
+		echo "Install it with:"; \
+		echo "    go install github.com/goreleaser/nfpm/v2/cmd/nfpm@latest"; \
+		echo "and make sure \"\$$(go env GOPATH)/bin\" is on your PATH."; \
+		exit 1; \
+	}
+
 ## package-rpm: Build RPM package (requires nfpm)
 package-rpm: RELEASE ?= 1
-package-rpm:
+package-rpm: check-nfpm
 	@mkdir -p dist
 	VERSION=$(VERSION) RELEASE=$(RELEASE) GOARCH=$(or $(TARGETARCH),amd64) \
 		nfpm pkg --packager rpm --target dist/
 
 ## package-deb: Build DEB package (requires nfpm)
 package-deb: RELEASE ?= 1
-package-deb:
+package-deb: check-nfpm
 	@mkdir -p dist
 	VERSION=$(VERSION) RELEASE=$(RELEASE) GOARCH=$(or $(TARGETARCH),amd64) \
 		nfpm pkg --packager deb --target dist/
@@ -95,4 +104,4 @@ help:
 	@echo ""
 	@sed -n 's/^## //p' $(MAKEFILE_LIST) | column -t -s ':'
 
-.PHONY: build build-static cross image test vet tidy clean version help generate package-rpm package-deb packages
+.PHONY: build build-static cross image test vet tidy clean version help generate check-nfpm package-rpm package-deb packages
